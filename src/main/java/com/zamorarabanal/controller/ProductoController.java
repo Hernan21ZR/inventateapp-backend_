@@ -1,19 +1,23 @@
 package com.zamorarabanal.controller;
 
+import com.zamorarabanal.decorator.ProductoDecorator;
 import com.zamorarabanal.dto.ProductoDTO;
-import com.zamorarabanal.model.Categoria;
+import com.zamorarabanal.exception.CustomSuccessRecord;
+import com.zamorarabanal.factory.ProductoFactory;
 import com.zamorarabanal.model.Producto;
-import com.zamorarabanal.model.Proveedor;
 import com.zamorarabanal.service.IProductoService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.modelmapper.ModelMapper;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.net.URI;
+import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 import java.util.List;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
 
 @RestController
 @RequestMapping("/productos")
@@ -21,66 +25,61 @@ import java.util.List;
 public class ProductoController {
 
     private final IProductoService service;
-    private final ModelMapper modelMapper;
-
 
     @GetMapping
-    public ResponseEntity<List<ProductoDTO>> findAll() throws Exception {
+    public ResponseEntity<CollectionModel<EntityModel<ProductoDTO>>> findAll() {
+        List<EntityModel<ProductoDTO>> productos = service.findAll()
+                .stream()
+                .map(ProductoFactory::createDTO)
+                .map(dto -> new ProductoDecorator(dto).withLinks())
+                .toList();
 
-        List<ProductoDTO> list = service.findAll().stream().map(this::convertToDTO).toList();
-        return ResponseEntity.ok(list);
+        CollectionModel<EntityModel<ProductoDTO>> collection =
+                CollectionModel.of(productos,
+                        linkTo(methodOn(ProductoController.class).findAll()).withSelfRel()
+                );
+
+        return ResponseEntity.ok(collection);
     }
 
-
     @GetMapping("/{id}")
-    public ResponseEntity<ProductoDTO> findById(@PathVariable("id") Integer id) throws Exception{
-        ProductoDTO obj = convertToDTO(service.findById(id));
-        return ResponseEntity.ok(obj);
+    public ResponseEntity<EntityModel<ProductoDTO>> findById(@PathVariable("id") Integer id) {
+        Producto obj = service.findById(id);
+        ProductoDTO dto = ProductoFactory.createDTO(obj);
+
+        return ResponseEntity.ok(new ProductoDecorator(dto).withLinks());
     }
 
     @PostMapping
-    public ResponseEntity<ProductoDTO> save(@Valid @RequestBody ProductoDTO dto) throws Exception{
-        Producto obj = service.save(convertToEntity(dto));
-        URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(obj.getId_producto()).toUri();
-        return ResponseEntity.created(location).build();
+    public ResponseEntity<EntityModel<ProductoDTO>> save(@Valid @RequestBody ProductoDTO dto) {
+        Producto obj = service.save(ProductoFactory.createEntity(dto));
+        ProductoDTO savedDto = ProductoFactory.createDTO(obj);
+
+        return ResponseEntity.created(
+                linkTo(methodOn(ProductoController.class).findById(savedDto.getIdProducto())).toUri()
+        ).body(new ProductoDecorator(savedDto).withLinks());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProductoDTO> update(@Valid @RequestBody ProductoDTO dto, @PathVariable("id") Integer id) throws Exception {
-        Producto obj = service.update(convertToEntity(dto), id);
-        return ResponseEntity.ok(modelMapper.map(obj, ProductoDTO.class));
+    public ResponseEntity<CustomSuccessRecord> update(@Valid @RequestBody ProductoDTO dto, @PathVariable("id") Integer id) {
+        Producto obj = service.update(ProductoFactory.createEntity(dto), id);
+
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Actualizado correctamente",
+                "Producto con ID " + id + " actualizado correctamente"
+        ));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") Integer id) throws Exception{
+    public ResponseEntity<CustomSuccessRecord> delete(@PathVariable("id") Integer id) {
         service.delete(id);
-        return ResponseEntity.noContent().build();
 
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Eliminado correctamente",
+                "Producto con ID " + id + " eliminado correctamente"
+        ));
     }
 
-
-    private ProductoDTO convertToDTO(Producto obj){
-        return modelMapper.map(obj, ProductoDTO.class);
-    }
-
-    private Producto convertToEntity(ProductoDTO dto){
-        Producto producto = modelMapper.map(dto, Producto.class);
-
-        producto.setId_producto(dto.getIdProducto());
-
-        // Crear "proxies" de entidades solo con el ID
-        Proveedor proveedor = new Proveedor();
-        proveedor.setId_proveedor(dto.getIdProveedor());
-
-        Categoria categoria = new Categoria();
-        categoria.setId_categoria(dto.getIdCategoria());
-
-        // Asignarlos al producto
-        producto.setProveedor(proveedor);
-        producto.setCategoria(categoria);
-
-        return producto;
-    }
 }
-
-

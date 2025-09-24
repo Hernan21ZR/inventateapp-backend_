@@ -1,17 +1,23 @@
 package com.zamorarabanal.controller;
 
+import com.zamorarabanal.decorator.CategoriaDecorator;
 import com.zamorarabanal.dto.CategoriaDTO;
+import com.zamorarabanal.exception.CustomSuccessRecord;
+import com.zamorarabanal.factory.CategoriaFactory;
 import com.zamorarabanal.model.Categoria;
 import com.zamorarabanal.service.ICategoriaService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.modelmapper.ModelMapper;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.net.URI;
+import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 import java.util.List;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
 
 @RestController
 @RequestMapping("/categorias")
@@ -19,51 +25,61 @@ import java.util.List;
 public class CategoriaController {
 
     private final ICategoriaService service;
-    private final ModelMapper modelMapper;
-
 
     @GetMapping
-    public ResponseEntity<List<CategoriaDTO>> findAll() throws Exception {
+    public ResponseEntity<CollectionModel<EntityModel<CategoriaDTO>>> findAll() {
+        List<EntityModel<CategoriaDTO>> categorias = service.findAll()
+                .stream()
+                .map(CategoriaFactory::createDTO)
+                .map(dto -> new CategoriaDecorator(dto).withLinks())
+                .toList();
 
-        List<CategoriaDTO> list = service.findAll().stream().map(this::convertToDTO).toList();
-        return ResponseEntity.ok(list);
+        CollectionModel<EntityModel<CategoriaDTO>> collection =
+                CollectionModel.of(categorias,
+                        linkTo(methodOn(CategoriaController.class).findAll()).withSelfRel()
+                );
+
+        return ResponseEntity.ok(collection);
     }
 
-
     @GetMapping("/{id}")
-    public ResponseEntity<CategoriaDTO> findById(@PathVariable("id") Integer id) throws Exception{
-        CategoriaDTO obj = convertToDTO(service.findById(id));
-        return ResponseEntity.ok(obj);
+    public ResponseEntity<EntityModel<CategoriaDTO>> findById(@PathVariable("id") Integer id) {
+        Categoria obj = service.findById(id);
+        CategoriaDTO dto = CategoriaFactory.createDTO(obj);
+
+        return ResponseEntity.ok(new CategoriaDecorator(dto).withLinks());
     }
 
     @PostMapping
-    public ResponseEntity<CategoriaDTO> save(@Valid @RequestBody CategoriaDTO dto) throws Exception{
-        Categoria obj = service.save(convertToEntity(dto));
-        URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(obj.getId_categoria()).toUri();
-        return ResponseEntity.created(location).build();
+    public ResponseEntity<EntityModel<CategoriaDTO>> save(@Valid @RequestBody CategoriaDTO dto) {
+        Categoria obj = service.save(CategoriaFactory.createEntity(dto));
+        CategoriaDTO savedDto = CategoriaFactory.createDTO(obj);
+
+        return ResponseEntity.created(
+                linkTo(methodOn(CategoriaController.class).findById(savedDto.getIdCategoria())).toUri()
+        ).body(new CategoriaDecorator(savedDto).withLinks());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<CategoriaDTO> update(@Valid @RequestBody CategoriaDTO dto, @PathVariable("id") Integer id) throws Exception {
-        Categoria obj = service.update(convertToEntity(dto), id);
-        return ResponseEntity.ok(modelMapper.map(obj, CategoriaDTO.class));
+    public ResponseEntity<CustomSuccessRecord> update(@Valid @RequestBody CategoriaDTO dto, @PathVariable("id") Integer id) {
+        Categoria obj = service.update(CategoriaFactory.createEntity(dto), id);
+
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Actualizado correctamente",
+                "Categoría con ID " + id + " actualizada correctamente"
+        ));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") Integer id) throws Exception{
+    public ResponseEntity<CustomSuccessRecord> delete(@PathVariable("id") Integer id) {
         service.delete(id);
-        return ResponseEntity.noContent().build();
 
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Eliminado correctamente",
+                "Categoría con ID " + id + " eliminada correctamente"
+        ));
     }
 
-
-    private CategoriaDTO convertToDTO(Categoria obj){
-        return modelMapper.map(obj, CategoriaDTO.class);
-    }
-
-    private Categoria convertToEntity(CategoriaDTO dto){
-        return modelMapper.map(dto, Categoria.class);
-    }
 }
-
-

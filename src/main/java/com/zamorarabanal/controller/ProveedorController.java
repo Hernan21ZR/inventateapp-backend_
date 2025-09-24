@@ -1,18 +1,23 @@
 package com.zamorarabanal.controller;
 
+import com.zamorarabanal.decorator.ProveedorDecorator;
 import com.zamorarabanal.dto.ProveedorDTO;
+import com.zamorarabanal.exception.CustomSuccessRecord;
+import com.zamorarabanal.factory.ProveedorFactory;
 import com.zamorarabanal.model.Proveedor;
-import com.zamorarabanal.service.IProductoService;
 import com.zamorarabanal.service.IProveedorService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.modelmapper.ModelMapper;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.net.URI;
+import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 import java.util.List;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
 
 @RestController
 @RequestMapping("/proveedores")
@@ -20,51 +25,61 @@ import java.util.List;
 public class ProveedorController {
 
     private final IProveedorService service;
-    private final ModelMapper modelMapper;
-
 
     @GetMapping
-    public ResponseEntity<List<ProveedorDTO>> findAll() throws Exception {
+    public ResponseEntity<CollectionModel<EntityModel<ProveedorDTO>>> findAll() {
+        List<EntityModel<ProveedorDTO>> proveedores = service.findAll()
+                .stream()
+                .map(ProveedorFactory::createDTO)
+                .map(dto -> new ProveedorDecorator(dto).withLinks())
+                .toList();
 
-        List<ProveedorDTO> list = service.findAll().stream().map(this::convertToDTO).toList();
-        return ResponseEntity.ok(list);
+        CollectionModel<EntityModel<ProveedorDTO>> collection =
+                CollectionModel.of(proveedores,
+                        linkTo(methodOn(ProveedorController.class).findAll()).withSelfRel()
+                );
+
+        return ResponseEntity.ok(collection);
     }
 
-
     @GetMapping("/{id}")
-    public ResponseEntity<ProveedorDTO> findById(@PathVariable("id") Integer id) throws Exception{
-        ProveedorDTO obj = convertToDTO(service.findById(id));
-        return ResponseEntity.ok(obj);
+    public ResponseEntity<EntityModel<ProveedorDTO>> findById(@PathVariable("id") Integer id) {
+        Proveedor obj = service.findById(id);
+        ProveedorDTO dto = ProveedorFactory.createDTO(obj);
+
+        return ResponseEntity.ok(new ProveedorDecorator(dto).withLinks());
     }
 
     @PostMapping
-    public ResponseEntity<ProveedorDTO> save(@Valid @RequestBody ProveedorDTO dto) throws Exception{
-        Proveedor obj = service.save(convertToEntity(dto));
-        URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(obj.getId_proveedor()).toUri();
-        return ResponseEntity.created(location).build();
+    public ResponseEntity<EntityModel<ProveedorDTO>> save(@Valid @RequestBody ProveedorDTO dto) {
+        Proveedor obj = service.save(ProveedorFactory.createEntity(dto));
+        ProveedorDTO savedDto = ProveedorFactory.createDTO(obj);
+
+        return ResponseEntity.created(
+                linkTo(methodOn(ProveedorController.class).findById(savedDto.getIdProveedor())).toUri()
+        ).body(new ProveedorDecorator(savedDto).withLinks());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProveedorDTO> update(@Valid @RequestBody ProveedorDTO dto, @PathVariable("id") Integer id) throws Exception {
-        Proveedor obj = service.update(convertToEntity(dto), id);
-        return ResponseEntity.ok(modelMapper.map(obj, ProveedorDTO.class));
+    public ResponseEntity<CustomSuccessRecord> update(@Valid @RequestBody ProveedorDTO dto, @PathVariable("id") Integer id) {
+        Proveedor obj = service.update(ProveedorFactory.createEntity(dto), id);
+
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Actualizado correctamente",
+                "Proveedor con ID " + id + " actualizado correctamente"
+        ));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") Integer id) throws Exception{
+    public ResponseEntity<CustomSuccessRecord> delete(@PathVariable("id") Integer id) {
         service.delete(id);
-        return ResponseEntity.noContent().build();
 
+        return ResponseEntity.ok(new CustomSuccessRecord(
+                LocalDateTime.now(),
+                "Eliminado correctamente",
+                "Proveedor con ID " + id + " eliminado correctamente"
+        ));
     }
 
-
-    private ProveedorDTO convertToDTO(Proveedor obj){
-        return modelMapper.map(obj, ProveedorDTO.class);
-    }
-
-    private Proveedor convertToEntity(ProveedorDTO dto){
-        return modelMapper.map(dto, Proveedor.class);
-    }
 }
-
-
